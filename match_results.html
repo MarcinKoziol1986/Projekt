@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wyniki Meczu</title>
+</head>
+<body>
+    <h1>Wyniki Meczu</h1>
+
+    <h2>Druzyna Bazowa ({{ base_team_name }})</h2>
+    {% for position, player in base_team.items() %}
+        <p>{{ position }}: {{ player.name }}</p>
+    {% endfor %}
+    <p>Statystyki: {{ base_team_rating }}</p>
+
+    <h2>Drużyna Przeciwna ({{ opposing_team_name }})</h2>
+    {% for position, player in opposing_team.items() %}
+        <p>{{ position }}: {{ player.name }}</p>
+    {% endfor %}
+    <p>Statystyki: {{ opposing_team_rating }}</p>
+
+    <h2>Symulacja Meczu</h2>
+    <p>{{ match_result }}</p>
+</body>
+</html>

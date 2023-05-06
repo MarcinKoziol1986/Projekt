@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wybrana Drużyna</title>
+</head>
+<body>
+    <h1>Wybrana Drużyna</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Pozycja</th>
+                <th>Imię</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for position, name in team.items() %}
+                {% if name %}
+                    <tr>
+                        <td>{{ position }}</td>
+                        <td>{{ name }}</td>
+                    </tr>
+                {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    <form action="/match_simulation" method="post">
+        <input type="hidden" name="selected_club" value="{{ club }}">
+        <input type="submit" value="Symuluj mecz">
+    </form>
+</body>
+</html>
