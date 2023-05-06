@@ -5,29 +5,32 @@
  fikcyjną drużynę przeciwną z którą mecz byłby najbardziej wyrównany
  (każda pozycja jest obsadzona, poszczególne formacje mają jak najbliższe sobie
   sumy overall rating)"""
-
 import os
-import pandas as pd
 import pickle
-import random
+import pandas as pd
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from flask import render_template
 
-app = Flask(__name__)
+# Flask app
+app = Flask(__name__, template_folder='C:\\Users\\Sniezyn\\PycharmProjects\\Druzyna\\'
+                                      'venv\\templates')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///fifa.db'
 db = SQLAlchemy(app)
 
+#Klasa Player
 class Player(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80))
     club = db.Column(db.String(80))
+    position = db.Column(db.String(10))
+    overall_rating = db.Column(db.Integer)
+
 
 with app.app_context():
     db.create_all()
-
+#metoda do wyboru druzyny
 @app.route('/teams', methods=['GET'])
-
-
 def get_teams():
     club = request.args.get('club')
     if club:
@@ -41,158 +44,136 @@ def get_teams():
         positions = ['GK', 'CB', 'RB', 'LB', 'CDM', 'CM', 'CAM', 'RW', 'LW', 'ST']
         team = {}
         for position in positions:
-            team[position] = Player.query.filter_by\
-                (position=position).filter(Player.overall_rating >=
-                                           avg_rating).first().name
-        return jsonify(team)
+            player = Player.query.filter_by(position=position).\
+                filter(Player.club == club) \
+                .order_by(Player.overall_rating.desc()).first()
+
+            if player:
+                team[position] = player.name
+                players.remove(
+                    player)  # usuwa puste pola i duplikaty zawodnikow
+            else:
+                team[position] = None
+
+        return render_template('team.html', team=team, club=club)
+
     else:
         return jsonify({'error': 'Klub Nie Wybrany'})
-if __name__ == '__main__':
-        app.run(debug=True)
 
-# Drużyny Bazowe
+
+def save_to_db():
+    with app.app_context():
+        fifa_df = pd.read_csv('C:/Users/Sniezyn/PycharmProjects/Druzyna/FIFA-21'
+                              'Complete.csv', sep=';')
+        for index, row in fifa_df.iterrows():
+            player_name = row['name']
+            club = row['club'].replace('"', '').strip()
+            position = row['position']
+            overall_rating = row['overall']
+            player_positions = position.split('|')
+            for             pos in player_positions:
+                player = Player(name=player_name, club=club, position=pos,
+                                overall_rating=overall_rating)
+                db.session.add(player)
+                db.session.commit()
+
+
+save_to_db()
+
 BASE_TEAMS_DIR = 'base_teams/'
 
-# Utwórz DIR jesli nie istnieje
 if not os.path.exists(BASE_TEAMS_DIR):
     os.mkdir(BASE_TEAMS_DIR)
 
-# Funkcja zapisu bazowej druzyny
+#zapis druzyny bazowej
 def save_base_team(base_team, team_name):
     filename = BASE_TEAMS_DIR + team_name + '.pkl'
     with open(filename, 'wb') as f:
         pickle.dump(base_team, f)
 
-# Funkcja do pobierania bazowej druzyny
+
 def load_base_team(team_name):
     filename = BASE_TEAMS_DIR + team_name + '.pkl'
     with open(filename, 'rb') as f:
         return pickle.load(f)
-# plik CSV
-fifa_df = pd.read_csv('C:/Users/Sniezyn/PycharmProjects/Druzyna/FIFA-21 Complete.csv',
-                      sep=';')
+def get_base_team(selected_club):
+    players = Player.query.filter_by(club=selected_club).all()
+    team_positions = ['GK', 'RB', 'CB', 'LB', 'CDM', 'CM', 'RW', 'ST', 'LW']
+    base_team = {}
 
-#Kluby = Bazowe drużyny
-clubs = ['Real Madrid', 'FC Barcelona', 'Manchester United',
-         'Liverpool', 'Juventus', 'Paris Saint-Germain']
-# wybór klubu
-selected_club = input("Wybierz Klub Pilkarski z podanej Listy: "
-                      + ", ".join(clubs) + "\n")
+    for position in team_positions:
+        player = Player.query.filter_by(position=position, club=selected_club) \
+            .order_by(Player.overall_rating.desc()).first()
 
-while selected_club not in clubs:
-    print("Blad. Wybierz Klub Pilkraski z Listy.")
-    selected_club = input("Wybierz Klub Pilkarski z podanej Listy: "
-                          + ", ".join(clubs) + "\n")
+        if player:
+            base_team[position] = player
 
-print("Wybrales!!:", selected_club, "!!!!!")
+    return base_team
+# get druzyny przeciwnej
+def get_opposing_team(base_team):
+    base_team_positions = list(base_team.keys())
+    opposing_team = {}
 
-players = fifa_df[fifa_df['club'] == selected_club]
-# Statystyki
-overall_ratings = {}
-for index, player in players.iterrows():
-    overall_rating = player[['shooting', 'passing', 'dribbling', 'defending',
-                             'physic']].sum()
-    overall_ratings[player['name']] = overall_rating
-sorted_ratings = dict(sorted(overall_ratings.items(), key=lambda x: x[1], reverse=True))
+    for position in base_team_positions:
+        base_player = base_team[position]
+        base_rating = base_player.overall_rating
 
-base_team = list(sorted_ratings)[:11]
-if base_team:
-    base_rating = [player['overall_rating'] for player in base_team if player
-    ['overall_rating'] is not None]
-else:
-    base_rating = []
+        other_players_position = Player.query.filter(Player.position == position,
+                                                     Player.club != base_player.club)
+        closest_player = None
+        closest_diff = float('inf')
 
-total_rating = sum(sorted_ratings[player] for player in base_team)
+        for player in other_players_position:
+            diff = abs(player.overall_rating - base_rating)
+            if diff < closest_diff:
+                closest_player = player
+                closest_diff = diff
 
-print("Druzyna Bazowa", selected_club, "to:", ", ".join(base_team))
-print("Statystyki dla Druzyny Bazowej:", total_rating)
-# zachowaj bazowa druzyne
-team_name = input("Wprowadz Nazwe Druzyny Bazowej by ja Zapisac: ")
-save_base_team(base_team, team_name)
+        opposing_team[position] = closest_player
 
-# pobierz bazowa druzyny
-team_name = input("Wprowadz Nazwe Druzyny Bazowej by ja Pobrac: ")
-base_team = load_base_team(team_name)
+    return opposing_team
+#symulator meczu
+@app.route('/match_simulation', methods=['POST'])
+def match_simulation():
+    selected_club = request.form.get('selected_club')
 
-other_players = fifa_df[~fifa_df['name'].isin(base_team)]
-base_team_positions = ['GK', 'RB', 'CB1', 'CB2', 'LB', 'CDM', 'CM1', 'CM2', 'RW',
-                       'ST', 'LW']
-#druzyna przeciwna
-opposing_team = {}
-for position in base_team_positions:
-    # Find the overall rating for the current position in the base team
-    base_rating = [player['overall_rating'] for player in base_team if
-                   player['team_position'] == position][0]
-    # Filter the other players by position
-    other_players_position = other_players[other_players['team_position'] == position]
-    # Find the player with the closest overall rating to the current position's overall rating
-    closest_player = other_players_position.iloc[(other_players_position['overall_rating']
-                                                  - base_rating).abs().argsort()
-    [:1]].iloc[0]
-    # Add the player to the opposing team dictionary
-    opposing_team[position] = closest_player
-opposing_team_rating = sum([player['overall_rating'] for player in
-                            opposing_team.values()])
-print("Druzyna Bazowa:")
-for position, player in zip(base_team_positions, base_team):
-    print(position + ": " + player)
-print("Statystyki: " + str(total_rating))
+    if selected_club:
+        base_team = get_base_team(selected_club)
+        opposing_team = get_opposing_team(base_team)
 
-print("\nDrużyna Przeciwna:")
-for position, player in opposing_team.items():
-    print(position + ": " + player['name'])
-print("Statystyki: " + str(opposing_team_rating))
+        base_team_rating = sum([player.overall_rating for player in base_team.values()])
+        opposing_team_rating = sum([player.overall_rating for player in
+                                    opposing_team.values()])
 
-print("Druzyna Bazowa", selected_club, "to:", ", ".join(base_team))
-print("Statystyki dla Druzyny Bazowej:", total_rating)
-print("\nDrużyna Przeciwna:")
-for position, player in opposing_team.items():
-    print(position + ": " + player['name'])
-print("Statystyki: " + str(opposing_team_rating))
-print("\nSymulacja Meczu...")
-if total_rating > opposing_team_rating:
-    print("Druzyna Bazowa Wygrywa!!!!")
-elif total_rating < opposing_team_rating:
-    print("Druzyna Przeciwna Wygrywa!")
-else:
-    print("Remis!!!.")
+        if base_team_rating > opposing_team_rating:
+            match_result = "Druzyna Bazowa Wygrywa!!!!"
+        elif base_team_rating < opposing_team_rating:
+            match_result = "Druzyna Przeciwna Wygrywa!"
+        else:
+            match_result = "Remis!!!."
+
+        # Dodajemy tu nazwę drużyny przeciwnej
+        opposing_club = list(opposing_team.values())[0].club
+
+        return render_template('match_results.html',
+                               base_team=base_team,
+                               base_team_name=selected_club,  # przekazujemy nazwę drużyny bazowej
+                               base_team_rating=base_team_rating,
+                               opposing_team=opposing_team,
+                               opposing_team_name=opposing_club,  # przekazujemy nazwę drużyny przeciwnej
+                               opposing_team_rating=opposing_team_rating,
+                               match_result=match_result)
+    else:
+        return jsonify({'error': 'Klub Nie Wybrany'})
+
+
+#index poczatkowy
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)
-'''
-# opocionalnie gernerator druzyn na podstawie statystyk
-def generate_team(play_style, num_players):
-    if play_style == 'possession':
-        # Select players with high passing, dribbling, and stamina
-        selected_players = fifa_df.nlargest(num_players,
-                                            ['passing', 'dribbling', 'stamina'])
-    elif play_style == 'counter-attack':
-        # Select players with high pace, dribbling, and vision
-        selected_players = fifa_df.nlargest(num_players, ['pace', 'dribbling', 'vision'])
-    else:
-        print("Invalid play style selected.")
-        return None
-
-    # Sort the selected players by their overall rating
-    sorted_players = selected_players.sort_values('overall_rating', ascending=False)
-
-    # Create a list of the top 11 players based on their overall rating
-    top_players = list(sorted_players.head(11)['name'])
-
-    return top_players
-play_style = input("Select a play style: possession or counter-attack\n")
-num_players = 100
-
-team = generate_team(play_style, num_players)
-if team:
-    print("The generated team for", play_style, "is:", ", ".join(team))
-
-
-if random.random() < 0.2:
-    print("But wait! The referee has awarded a penalty kick to the opposing team!")
-    print("They have a chance to turn the match around...")
-    if random.random() < 0.5:
-        print("The penalty kick is missed! The base team retains their lead.")
-    else:
-        print("The penalty kick is scored! The opposing team equalizes!")
-'''
 
